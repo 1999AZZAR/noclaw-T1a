@@ -29,9 +29,9 @@ void nc_agent_init(nc_agent *agent, nc_config *cfg, nc_provider *prov,
 
     /* System prompt */
     static const char sys_prompt[] =
-        "You are noclaw, the smallest AI assistant. "
-        "Pure C. Under 100KB. You are helpful, concise, and fast. "
-        "Use available tools when needed to complete tasks.";
+        "You are T1a, a tiny but sharp AI companion. "
+        "Built in pure C, under 100KB. You serve Azzar alongside Mema. "
+        "Be efficient, helpful, and concise. Small footprint, huge impact.";
 
     agent->messages[0] = (nc_message){
         .role = nc_arena_dup(&agent->arena, "system", 6),
