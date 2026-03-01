@@ -200,10 +200,34 @@ typedef struct nc_incoming_msg {
 } nc_incoming_msg;
 
 typedef struct nc_channel nc_channel;
+
+#define NC_MAX_MESSAGES 128
+
+typedef struct nc_memory nc_memory;
+struct nc_memory {
+    const char *backend_name;
+    void       *ctx;
+    bool (*store)(nc_memory *self, const char *key, const char *content);
+    bool (*recall)(nc_memory *self, const char *query, char *out, size_t out_cap);
+    bool (*forget)(nc_memory *self, const char *key);
+    void (*free)(nc_memory *self);
+};
+
+typedef struct nc_agent {
+    nc_config   *config;
+    nc_provider *provider;
+    struct nc_tool *tools;
+    int          tool_count;
+    nc_memory   *memory;
+    nc_message   messages[NC_MAX_MESSAGES];
+    int          message_count;
+    nc_arena     arena;
+} nc_agent;
+
 struct nc_channel {
     const char *name;
     void       *ctx;
-    bool (*poll)(nc_channel *self, nc_incoming_msg *out);
+    void (*poll)(nc_channel *self, nc_agent *agent);
     bool (*send)(nc_channel *self, const char *to, const char *text);
     void (*free)(nc_channel *self);
 };
@@ -238,31 +262,8 @@ nc_tool nc_tool_memory_recall(void *mem_ctx);
 /* MCP extensions */
 int nc_mcp_register_all(const nc_config *cfg, nc_tool *tools, int start_idx);
 
-typedef struct nc_memory nc_memory;
-struct nc_memory {
-    const char *backend_name;
-    void       *ctx;
-    bool (*store)(nc_memory *self, const char *key, const char *content);
-    bool (*recall)(nc_memory *self, const char *query, char *out, size_t out_cap);
-    bool (*forget)(nc_memory *self, const char *key);
-    void (*free)(nc_memory *self);
-};
-
 nc_memory nc_memory_noop(void);
 nc_memory nc_memory_flat(const char *path);
-
-#define NC_MAX_MESSAGES 128
-
-typedef struct nc_agent {
-    nc_config   *config;
-    nc_provider *provider;
-    nc_tool     *tools;
-    int          tool_count;
-    nc_memory   *memory;
-    nc_message   messages[NC_MAX_MESSAGES];
-    int          message_count;
-    nc_arena     arena;
-} nc_agent;
 
 void nc_agent_init(nc_agent *agent, nc_config *cfg, nc_provider *prov,
                    nc_tool *tools, int tool_count, nc_memory *mem);
@@ -301,6 +302,8 @@ int nc_cmd_gateway(int argc, char **argv);
 int nc_cmd_status(int argc, char **argv);
 int nc_cmd_onboard(int argc, char **argv);
 int nc_cmd_doctor(int argc, char **argv);
+
+bool nc_commands_execute(nc_agent *agent, const char *cmd, long chat_id, nc_channel *chan);
 
 size_t nc_strlcpy(char *dst, const char *src, size_t dstsize);
 const char *nc_home_dir(void);

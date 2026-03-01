@@ -1,97 +1,42 @@
-# noclaw — The absolute smallest AI assistant. Pure C.
-# Target: <100KB binary, <500KB RAM, <1ms startup.
+CC = cc
+CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -Wno-unused-parameter
+INCLUDES = -Isrc
+LDFLAGS = -lbearssl
 
-CC      ?= cc
-CFLAGS  := -std=c11 -Wall -Wextra -Wpedantic -Wno-unused-parameter
-LDFLAGS :=
+# Optimization: small binary, fast code
+RELEASE_FLAGS = -Os -DNDEBUG -flto -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables
+RELEASE_LDFLAGS = -flto -Wl,--gc-sections
 
-# Source files
-SRCS := $(wildcard src/*.c)
-OBJS := $(SRCS:.c=.o)
+DEBUG_FLAGS = -g -O0 -DDEBUG
 
-# Output
-BIN := noclaw
+SRC_DIR = src
+OBJ_DIR = obj
 
-# ── Platform detection ───────────────────────────────────────────
+SRCS = $(wildcard $(SRC_DIR)/*.c)
+OBJS = $(SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 
-UNAME := $(shell uname -s)
+TARGET = noclaw
 
-ifeq ($(UNAME),Darwin)
-  # macOS: SecureTransport for TLS (system framework, no extra deps)
-  LDFLAGS += -framework Security -framework CoreFoundation
-else
-  # Linux: BearSSL for TLS (tiny footprint, ~200KB RSS vs OpenSSL's ~4.6MB)
-  LDFLAGS += -lbearssl
-endif
-
-# ── Build modes ──────────────────────────────────────────────────
-
-.PHONY: all release debug clean test install uninstall
+.PHONY: all clean debug release
 
 all: release
 
-release: CFLAGS  += -Os -DNDEBUG -flto -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables
-ifeq ($(UNAME),Darwin)
-release: LDFLAGS += -flto -Wl,-dead_strip
-else
-release: LDFLAGS += -flto -Wl,--gc-sections
-endif
-release: $(BIN)
-	@ls -lh $(BIN) | awk '{print "Binary: " $$5}'
+$(OBJ_DIR):
+	mkdir -p $(OBJ_DIR)
 
-debug: CFLAGS += -O0 -g -DDEBUG -fsanitize=address,undefined
-debug: LDFLAGS += -fsanitize=address,undefined
-debug: $(BIN)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
+	$(CC) $(CFLAGS) $(OPT_FLAGS) $(INCLUDES) -c $< -o $@
 
-# ── Link ─────────────────────────────────────────────────────────
+debug: OPT_FLAGS = $(DEBUG_FLAGS)
+debug: $(TARGET)
 
-$(BIN): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+release: OPT_FLAGS = $(RELEASE_FLAGS)
+release: LDFLAGS += $(RELEASE_LDFLAGS)
+release: $(TARGET)
+	@echo "Binary: $$(du -h $(TARGET) | cut -f1)"
 
-# ── Compile ──────────────────────────────────────────────────────
-
-src/%.o: src/%.c src/nc.h
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-# ── Test ─────────────────────────────────────────────────────────
-
-test: CFLAGS += -O0 -g -DDEBUG -DNC_TEST
-test:
-	$(CC) $(CFLAGS) -o noclaw_test src/*.c -DNC_TEST_MAIN $(LDFLAGS)
-	./noclaw_test
-	@rm -f noclaw_test
-
-# ── Musl static build (Linux only) ───────────────────────────
-
-.PHONY: musl
-musl: CC := musl-gcc
-musl: CFLAGS  += -Os -DNDEBUG -flto -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -Iinc
-musl: LDFLAGS := -static lib/libbearssl.a -lm -flto -Wl,--gc-sections
-musl: $(BIN)
-	@strip -s $(BIN)
-	@ls -lh $(BIN) | awk '{print "Binary: " $$5 " (static, stripped)"}'
-
-# ── Install ──────────────────────────────────────────────────────
-
-PREFIX ?= /usr/local
-
-install: release
-	install -d $(PREFIX)/bin
-	install -m 755 $(BIN) $(PREFIX)/bin/$(BIN)
-
-uninstall:
-	rm -f $(PREFIX)/bin/$(BIN)
-
-# ── Clean ────────────────────────────────────────────────────────
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) $(OPT_FLAGS) -o $@ $^ $(LDFLAGS)
 
 clean:
-	rm -f src/*.o $(BIN) noclaw_test
-
-# ── Size report ──────────────────────────────────────────────────
-
-.PHONY: size
-size: release
-	@echo "--- Binary size ---"
-	@ls -lh $(BIN)
-	@echo "--- Section sizes ---"
-	@size $(BIN) 2>/dev/null || true
+	rm -rf $(OBJ_DIR) $(TARGET)

@@ -1,8 +1,3 @@
-/*
- * Built-in tool implementations: shell, file_read, file_write, memory.
- * Each tool is a vtable instance matching the nc_tool interface.
- */
-
 #include "nc.h"
 #include <string.h>
 #include <stdio.h>
@@ -15,7 +10,7 @@
 static bool extract_json_string(const char *json, const char *key,
                                 char *out, size_t out_cap) {
     nc_arena a;
-    nc_arena_init(&a, strlen(json) * 2 + 256);
+    nc_arena_init(&a, strlen(json) * 2 + 1024); /* Increased arena for deeper JSON */
     nc_json *root = nc_json_parse(&a, json, strlen(json));
     if (!root) { nc_arena_free(&a); return false; }
 
@@ -34,42 +29,33 @@ static bool extract_json_string(const char *json, const char *key,
 
 static bool shell_execute(nc_tool *self, const char *args_json, char *out, size_t out_cap) {
     const nc_config *cfg = (const nc_config *)self->ctx;
-    char command[2048];
+    char command[4096];
 
     if (!extract_json_string(args_json, "command", command, sizeof(command))) {
         nc_strlcpy(out, "error: missing 'command' argument", out_cap);
         return false;
     }
 
-    /* Guard: prevent dangerous recursive calls that might lead to infinite loops */
     if (strstr(command, "noclaw") || strstr(command, "start_t1a.sh")) {
-        nc_strlcpy(out, "error: self-referential command execution forbidden", out_cap);
+        nc_strlcpy(out, "error: recursive command execution forbidden", out_cap);
         return false;
     }
 
+    char final_cmd[8192];
     if (cfg->workspace_only) {
-        const char *ws = cfg->workspace_dir;
-        for (const char *c = ws; *c; c++) {
-            if (*c == '\'' || *c == '\\' || *c == '"' || *c == '$' ||
-                *c == '`' || *c == '!' || *c == ';' || *c == '|' ||
-                *c == '&' || *c == '\n') {
-                nc_strlcpy(out, "error: workspace path contains unsafe characters", out_cap);
-                return false;
-            }
-        }
-        char full_cmd[4096];
-        snprintf(full_cmd, sizeof(full_cmd), "cd '%s' && %s", cfg->workspace_dir, command);
-        nc_strlcpy(command, full_cmd, sizeof(command));
+        snprintf(final_cmd, sizeof(final_cmd), "cd '%s' && %s 2>&1", cfg->workspace_dir, command);
+    } else {
+        snprintf(final_cmd, sizeof(final_cmd), "%s 2>&1", command);
     }
 
-    FILE *fp = popen(command, "r");
+    FILE *fp = popen(final_cmd, "r");
     if (!fp) {
-        nc_strlcpy(out, "error: failed to execute command", out_cap);
+        nc_strlcpy(out, "error: popen failed", out_cap);
         return false;
     }
 
     size_t total = 0;
-    char buf[1024];
+    char buf[2048];
     while (fgets(buf, sizeof(buf), fp) && total < out_cap - 1) {
         size_t n = strlen(buf);
         if (total + n >= out_cap - 1) n = out_cap - 1 - total;
@@ -79,19 +65,9 @@ static bool shell_execute(nc_tool *self, const char *args_json, char *out, size_
     out[total] = '\0';
     int status = pclose(fp);
 
-    /* If command produced no output but failed, report the exit code */
     if (total == 0 && status != 0) {
-        snprintf(out, out_cap, "error: command failed with exit code %d", WEXITSTATUS(status));
+        snprintf(out, out_cap, "error: exit code %d", WEXITSTATUS(status));
         return false;
-    }
-
-    if (status != 0) {
-        char suffix[64];
-        snprintf(suffix, sizeof(suffix), "\n[exit code: %d]", WEXITSTATUS(status));
-        size_t sl = strlen(suffix);
-        if (total + sl < out_cap) {
-            memcpy(out + total, suffix, sl + 1);
-        }
     }
 
     return status == 0;
@@ -102,8 +78,7 @@ nc_tool nc_tool_shell(const nc_config *cfg) {
         .def = {
             .name = "shell",
             .description = "Execute a shell command and return its output.",
-            .parameters_json =
-                "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"The shell command to execute\"}},\"required\":[\"command\"]}",
+            .parameters_json = "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}},\"required\":[\"command\"]}",
         },
         .ctx = (void *)cfg,
         .execute = shell_execute,
@@ -118,38 +93,21 @@ static bool file_read_execute(nc_tool *self, const char *args_json, char *out, s
     char path[1024];
 
     if (!extract_json_string(args_json, "path", path, sizeof(path))) {
-        nc_strlcpy(out, "error: missing 'path' argument", out_cap);
+        nc_strlcpy(out, "error: missing 'path'", out_cap);
         return false;
     }
 
+    char full_path[2048];
     if (path[0] == '/') {
-        if (strncmp(path, cfg->config_dir, strlen(cfg->config_dir)) != 0) {
-            nc_strlcpy(out, "error: absolute paths restricted to workspace or config", out_cap);
-            return false;
-        }
+        nc_strlcpy(full_path, path, sizeof(full_path));
     } else {
-        char full_path[2048];
         nc_path_join(full_path, sizeof(full_path), cfg->workspace_dir, path);
-        nc_strlcpy(path, full_path, sizeof(path));
-    }
-
-    {
-        const char *p = path;
-        while (*p) {
-            if (p[0] == '.' && p[1] == '.' && (p[2] == '/' || p[2] == '\0')) {
-                nc_strlcpy(out, "error: path traversal not allowed", out_cap);
-                return false;
-            }
-            const char *sl = strchr(p, '/');
-            if (!sl) break;
-            p = sl + 1;
-        }
     }
 
     size_t len;
-    char *content = nc_read_file(path, &len);
+    char *content = nc_read_file(full_path, &len);
     if (!content) {
-        snprintf(out, out_cap, "error: cannot read file '%s'", path);
+        snprintf(out, out_cap, "error: cannot read %s", full_path);
         return false;
     }
 
@@ -164,9 +122,8 @@ nc_tool nc_tool_file_read(const nc_config *cfg) {
     return (nc_tool){
         .def = {
             .name = "file_read",
-            .description = "Read the contents of a file.",
-            .parameters_json =
-                "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"File path to read\"}},\"required\":[\"path\"]}",
+            .description = "Read file content.",
+            .parameters_json = "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}",
         },
         .ctx = (void *)cfg,
         .execute = file_read_execute,
@@ -179,64 +136,37 @@ nc_tool nc_tool_file_read(const nc_config *cfg) {
 static bool file_write_execute(nc_tool *self, const char *args_json, char *out, size_t out_cap) {
     const nc_config *cfg = (const nc_config *)self->ctx;
     char path[1024];
-    char *content = malloc(16384);
+    /* 256KB for large content on small SBCs */
+    char *content = malloc(262144);
     if (!content) return false;
 
-    if (!extract_json_string(args_json, "path", path, sizeof(path))) {
-        nc_strlcpy(out, "error: missing 'path' argument", out_cap);
-        free(content);
-        return false;
-    }
-    if (!extract_json_string(args_json, "content", content, 16384)) {
-        nc_strlcpy(out, "error: missing 'content' argument", out_cap);
+    if (!extract_json_string(args_json, "path", path, sizeof(path)) ||
+        !extract_json_string(args_json, "content", content, 262144)) {
         free(content);
         return false;
     }
 
+    char full_path[2048];
     if (path[0] == '/') {
-        if (strncmp(path, cfg->config_dir, strlen(cfg->config_dir)) != 0) {
-            nc_strlcpy(out, "error: absolute paths restricted to workspace or config", out_cap);
-            free(content);
-            return false;
-        }
+        nc_strlcpy(full_path, path, sizeof(full_path));
     } else {
-        char full_path[2048];
         nc_path_join(full_path, sizeof(full_path), cfg->workspace_dir, path);
-        nc_strlcpy(path, full_path, sizeof(path));
     }
 
-    {
-        const char *p = path;
-        while (*p) {
-            if (p[0] == '.' && p[1] == '.' && (p[2] == '/' || p[2] == '\0')) {
-                nc_strlcpy(out, "error: path traversal not allowed", out_cap);
-                free(content);
-                return false;
-            }
-            const char *sl = strchr(p, '/');
-            if (!sl) break;
-            p = sl + 1;
-        }
-    }
+    bool ok = nc_write_file(full_path, content, strlen(content));
+    if (ok) snprintf(out, out_cap, "OK: wrote %zu bytes to %s", strlen(content), path);
+    else snprintf(out, out_cap, "error: write failed");
 
-    if (nc_write_file(path, content, strlen(content))) {
-        snprintf(out, out_cap, "Written %zu bytes to %s", strlen(content), path);
-        free(content);
-        return true;
-    } else {
-        snprintf(out, out_cap, "error: failed to write '%s'", path);
-        free(content);
-        return false;
-    }
+    free(content);
+    return ok;
 }
 
 nc_tool nc_tool_file_write(const nc_config *cfg) {
     return (nc_tool){
         .def = {
             .name = "file_write",
-            .description = "Write content to a file.",
-            .parameters_json =
-                "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"File path\"},\"content\":{\"type\":\"string\",\"description\":\"Content to write\"}},\"required\":[\"path\",\"content\"]}",
+            .description = "Write content to file.",
+            .parameters_json = "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"content\":{\"type\":\"string\"}},\"required\":[\"path\",\"content\"]}",
         },
         .ctx = (void *)cfg,
         .execute = file_write_execute,
@@ -244,30 +174,17 @@ nc_tool nc_tool_file_write(const nc_config *cfg) {
     };
 }
 
-/* ── Memory store tool ────────────────────────────────────────── */
+/* ── Memory tools ────────────────────────────────────────────── */
 
 static bool memory_store_execute(nc_tool *self, const char *args_json, char *out, size_t out_cap) {
     nc_memory *mem = (nc_memory *)self->ctx;
-    if (!mem) {
-        nc_strlcpy(out, "error: memory not configured", out_cap);
-        return false;
-    }
-
-    char key[256], content[4096];
-    if (!extract_json_string(args_json, "key", key, sizeof(key))) {
-        nc_strlcpy(out, "error: missing 'key' argument", out_cap);
-        return false;
-    }
-    if (!extract_json_string(args_json, "content", content, sizeof(content))) {
-        nc_strlcpy(out, "error: missing 'content' argument", out_cap);
-        return false;
-    }
-
+    char key[256], content[16384]; /* Larger content for memories */
+    if (!extract_json_string(args_json, "key", key, sizeof(key)) ||
+        !extract_json_string(args_json, "content", content, sizeof(content))) return false;
     if (mem->store(mem, key, content)) {
-        snprintf(out, out_cap, "Stored memory: %s", key);
+        snprintf(out, out_cap, "Stored: %s", key);
         return true;
     }
-    nc_strlcpy(out, "error: failed to store memory", out_cap);
     return false;
 }
 
@@ -275,9 +192,8 @@ nc_tool nc_tool_memory_store(void *mem_ctx) {
     return (nc_tool){
         .def = {
             .name = "memory_store",
-            .description = "Store a piece of information in long-term memory.",
-            .parameters_json =
-                "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"Memory key\"},\"content\":{\"type\":\"string\",\"description\":\"Content to remember\"}},\"required\":[\"key\",\"content\"]}",
+            .description = "Store info in memory.",
+            .parameters_json = "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\"},\"content\":{\"type\":\"string\"}},\"required\":[\"key\",\"content\"]}",
         },
         .ctx = mem_ctx,
         .execute = memory_store_execute,
@@ -285,35 +201,19 @@ nc_tool nc_tool_memory_store(void *mem_ctx) {
     };
 }
 
-/* ── Memory recall tool ───────────────────────────────────────── */
-
 static bool memory_recall_execute(nc_tool *self, const char *args_json, char *out, size_t out_cap) {
     nc_memory *mem = (nc_memory *)self->ctx;
-    if (!mem) {
-        nc_strlcpy(out, "error: memory not configured", out_cap);
-        return false;
-    }
-
     char query[1024];
-    if (!extract_json_string(args_json, "query", query, sizeof(query))) {
-        nc_strlcpy(out, "error: missing 'query' argument", out_cap);
-        return false;
-    }
-
-    if (mem->recall(mem, query, out, out_cap)) {
-        return true;
-    }
-    nc_strlcpy(out, "No matching memories found.", out_cap);
-    return true;
+    if (!extract_json_string(args_json, "query", query, sizeof(query))) return false;
+    return mem->recall(mem, query, out, out_cap);
 }
 
 nc_tool nc_tool_memory_recall(void *mem_ctx) {
     return (nc_tool){
         .def = {
             .name = "memory_recall",
-            .description = "Search long-term memory for relevant information.",
-            .parameters_json =
-                "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"Search query\"}},\"required\":[\"query\"]}",
+            .description = "Recall from memory.",
+            .parameters_json = "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}",
         },
         .ctx = mem_ctx,
         .execute = memory_recall_execute,

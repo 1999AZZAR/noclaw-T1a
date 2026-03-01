@@ -1,180 +1,154 @@
+/*
+ * Telegram channel implementation using minimalist BearSSL + native HTTP.
+ */
+
 #include "nc.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
-/* ── CLI channel ──────────────────────────────────────────────── */
-
-static bool cli_poll(nc_channel *self, nc_incoming_msg *out) {
-    (void)self;
-    memset(out, 0, sizeof(*out));
-
-    printf("you> ");
-    fflush(stdout);
-
-    if (!fgets(out->content, sizeof(out->content), stdin))
-        return false;
-
-    size_t len = strlen(out->content);
-    if (len > 0 && out->content[len - 1] == '\n')
-        out->content[len - 1] = '\0';
-
-    if (out->content[0] == '\0')
-        return false;
-
-    nc_strlcpy(out->sender, "cli", sizeof(out->sender));
-    nc_strlcpy(out->channel_name, "cli", sizeof(out->channel_name));
-    return true;
-}
-
-static bool cli_send(nc_channel *self, const char *to, const char *text) {
-    (void)self;
-    (void)to;
-    printf("T1a> %s\n", text);
-    return true;
-}
-
-static void cli_free(nc_channel *self) {
-    (void)self;
-}
-
-nc_channel nc_channel_cli(void) {
-    return (nc_channel){
-        .name = "cli",
-        .ctx  = NULL,
-        .poll = cli_poll,
-        .send = cli_send,
-        .free = cli_free,
-    };
-}
-
-/* ── Telegram channel (Bot API, long polling) ─────────────────── */
-
 typedef struct {
-    char token[256];
-    long long last_update_id;
+    char token[128];
+    long last_update_id;
 } tg_ctx;
 
-static void tg_send_action(tg_ctx *ctx, const char *chat_id, const char *action) {
-    char url[512];
+static void tg_set_typing(tg_ctx *ctx, long chat_id) {
+    char url[512], body[128];
     snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/sendChatAction", ctx->token);
-    
-    char body[256];
-    nc_jw w;
-    nc_jw_init(&w, body, sizeof(body));
-    nc_jw_obj_open(&w);
-    nc_jw_raw(&w, "chat_id", chat_id);
-    nc_jw_str(&w, "action", action);
-    nc_jw_obj_close(&w);
-
-    const char *headers[] = { "Content-Type: application/json" };
+    snprintf(body, sizeof(body), "{\"chat_id\":%ld,\"action\":\"typing\"}", chat_id);
+    const char *hdrs[] = {"Content-Type: application/json"};
     nc_http_response resp;
-    nc_http_post(url, body, w.len, headers, 1, &resp);
-    nc_http_response_free(&resp);
+    if (nc_http_post(url, body, strlen(body), hdrs, 1, &resp)) {
+        nc_http_response_free(&resp);
+    }
 }
 
-static bool tg_poll(nc_channel *self, nc_incoming_msg *out) {
-    tg_ctx *ctx = (tg_ctx *)self->ctx;
-    memset(out, 0, sizeof(*out));
-
+static void tg_send_msg(tg_ctx *ctx, long chat_id, const char *text) {
+    if (!text || !text[0]) return;
     char url[512];
-    snprintf(url, sizeof(url),
-        "https://api.telegram.org/bot%s/getUpdates?offset=%lld&timeout=30&allowed_updates=[\"message\"]",
-        ctx->token, ctx->last_update_id + 1);
+    snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/sendMessage", ctx->token);
+    
+    size_t body_sz = strlen(text) * 2 + 1024;
+    char *body = malloc(body_sz);
+    if (!body) return;
 
+    int off = 0;
+    off += snprintf(body + off, body_sz - (size_t)off, "{\"chat_id\":%ld,\"text\":\"", chat_id);
+    
+    for (const char *p = text; *p; p++) {
+        if (off > (int)body_sz - 32) break;
+        if (*p == '"') { body[off++] = '\\'; body[off++] = '"'; }
+        else if (*p == '\\') { body[off++] = '\\'; body[off++] = '\\'; }
+        else if (*p == '\n') { body[off++] = '\\'; body[off++] = 'n'; }
+        else if (*p == '\r') { body[off++] = '\\'; body[off++] = 'r'; }
+        else if (*p == '\t') { body[off++] = '\\'; body[off++] = 't'; }
+        else if ((unsigned char)*p >= 32) body[off++] = *p;
+    }
+    
+    off += snprintf(body + off, body_sz - (size_t)off, "\",\"parse_mode\":\"Markdown\"}");
+
+    const char *hdrs[] = {"Content-Type: application/json"};
     nc_http_response resp;
-    if (!nc_http_get(url, NULL, 0, &resp) || resp.status != 200) {
+    if (nc_http_post(url, body, (size_t)off, hdrs, 1, &resp)) {
         nc_http_response_free(&resp);
-        return false;
+    }
+    free(body);
+}
+
+static void tg_poll(nc_channel *self, nc_agent *agent) {
+    tg_ctx *ctx = (tg_ctx *)self->ctx;
+    char url[512], body[256];
+    snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/getUpdates", ctx->token);
+    
+    int off = 0;
+    off += snprintf(body + off, sizeof(body) - (size_t)off, "{");
+    if (ctx->last_update_id > 0) {
+        off += snprintf(body + off, sizeof(body) - (size_t)off, "\"offset\":%ld,", ctx->last_update_id + 1);
+    }
+    off += snprintf(body + off, sizeof(body) - (size_t)off, "\"timeout\":30}");
+
+    const char *hdrs[] = {"Content-Type: application/json"};
+    nc_http_response resp;
+    
+    nc_log(NC_LOG_INFO, "Polling Telegram with token %s...", ctx->token);
+    if (!nc_http_post(url, body, strlen(body), hdrs, 1, &resp)) {
+        nc_log(NC_LOG_ERROR, "TG poll failed (network)");
+        sleep(5);
+        return;
     }
 
-    nc_arena a;
-    nc_arena_init(&a, resp.body_len * 2 + 512);
-    nc_json *root = nc_json_parse(&a, resp.body, resp.body_len);
+    if (resp.status != 200) {
+        nc_log(NC_LOG_ERROR, "TG poll failed (HTTP %d): %.*s", resp.status, (int)resp.body_len, resp.body);
+        nc_http_response_free(&resp);
+        sleep(5);
+        return;
+    }
+
+    nc_arena scratch;
+    nc_arena_init(&scratch, resp.body_len * 2 + 8192);
+    nc_json *root = nc_json_parse(&scratch, resp.body, resp.body_len);
+    if (!root) {
+        nc_arena_free(&scratch);
+        nc_http_response_free(&resp);
+        return;
+    }
+
+    nc_json *ok = nc_json_get(root, "ok");
+    nc_json *res = nc_json_get(root, "result");
+    if (ok && ok->boolean && res && res->type == NC_JSON_ARRAY) {
+        for (int i = 0; i < res->array.count; i++) {
+            nc_json *upd = &res->array.items[i];
+            long uid = (long)nc_json_num(nc_json_get(upd, "update_id"), 0);
+            if (uid > ctx->last_update_id) ctx->last_update_id = uid;
+
+            nc_json *msg = nc_json_get(upd, "message");
+            if (!msg) continue;
+
+            nc_json *chat = nc_json_get(msg, "chat");
+            long chat_id = (long)nc_json_num(nc_json_get(chat, "id"), 0);
+            nc_str text = nc_json_str(nc_json_get(msg, "text"), "");
+
+            if (text.len > 0) {
+                char *cmd = malloc(text.len + 1);
+                memcpy(cmd, text.ptr, text.len);
+                cmd[text.len] = '\0';
+
+                nc_log(NC_LOG_INFO, "TG: [%ld] %s", chat_id, cmd);
+                
+                if (nc_commands_execute(agent, cmd, chat_id, self)) {
+                    free(cmd);
+                    continue;
+                }
+
+                tg_set_typing(ctx, chat_id);
+                const char *reply = nc_agent_chat(agent, cmd);
+                tg_send_msg(ctx, chat_id, reply);
+                free(cmd);
+            }
+        }
+    }
+
+    nc_arena_free(&scratch);
     nc_http_response_free(&resp);
-
-    if (!root || !nc_json_bool(nc_json_get(root, "ok"), false)) {
-        nc_arena_free(&a);
-        return false;
-    }
-
-    nc_json *result = nc_json_get(root, "result");
-    if (!result || result->type != NC_JSON_ARRAY || result->array.count == 0) {
-        nc_arena_free(&a);
-        return false;
-    }
-
-    nc_json *update = &result->array.items[0];
-    long long uid = (long long)nc_json_num(nc_json_get(update, "update_id"), 0);
-    if (uid > 0) ctx->last_update_id = uid;
-
-    nc_json *message = nc_json_get(update, "message");
-    if (!message) {
-        nc_arena_free(&a);
-        return false;
-    }
-
-    nc_json *chat = nc_json_get(message, "chat");
-    long long chat_id = (long long)nc_json_num(nc_json_get(chat, "id"), 0);
-    nc_str text = nc_json_str(nc_json_get(message, "text"), "");
-
-    if (text.len == 0) {
-        nc_arena_free(&a);
-        return false;
-    }
-
-    snprintf(out->sender, sizeof(out->sender), "%lld", chat_id);
-    size_t cplen = text.len < sizeof(out->content) - 1 ? text.len : sizeof(out->content) - 1;
-    memcpy(out->content, text.ptr, cplen);
-    out->content[cplen] = '\0';
-    nc_strlcpy(out->channel_name, "telegram", sizeof(out->channel_name));
-
-    /* Send 'typing' action as soon as we get a message */
-    tg_send_action(ctx, out->sender, "typing");
-
-    nc_arena_free(&a);
-    return true;
 }
 
 static bool tg_send(nc_channel *self, const char *to, const char *text) {
     tg_ctx *ctx = (tg_ctx *)self->ctx;
-
-    char url[512];
-    snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/sendMessage", ctx->token);
-
-    char body[8192];
-    nc_jw w;
-    nc_jw_init(&w, body, sizeof(body));
-    nc_jw_obj_open(&w);
-    nc_jw_raw(&w, "chat_id", to);
-    nc_jw_str(&w, "text", text);
-    nc_jw_str(&w, "parse_mode", "Markdown");
-    nc_jw_obj_close(&w);
-
-    const char *headers[] = { "Content-Type: application/json" };
-    nc_http_response resp;
-    bool ok = nc_http_post(url, body, w.len, headers, 1, &resp);
-    int status = resp.status;
-    if (!ok || status != 200)
-        nc_log(NC_LOG_WARN, "Telegram sendMessage failed: HTTP %d", status);
-    nc_http_response_free(&resp);
-    return ok && status == 200;
+    if (!to) return false;
+    long chat_id = atol(to);
+    tg_send_msg(ctx, chat_id, text);
+    return true;
 }
 
-static void tg_free(nc_channel *self) {
-    free(self->ctx);
-    self->ctx = NULL;
-}
-
-nc_channel nc_channel_telegram(const char *bot_token) {
-    tg_ctx *ctx = (tg_ctx *)calloc(1, sizeof(tg_ctx));
-    nc_strlcpy(ctx->token, bot_token, sizeof(ctx->token));
+nc_channel nc_channel_telegram(const char *token) {
+    tg_ctx *ctx = calloc(1, sizeof(tg_ctx));
+    nc_strlcpy(ctx->token, token, sizeof(ctx->token));
     return (nc_channel){
         .name = "telegram",
-        .ctx  = ctx,
+        .ctx = ctx,
         .poll = tg_poll,
         .send = tg_send,
-        .free = tg_free,
+        .free = NULL
     };
 }
