@@ -32,6 +32,7 @@ static bool mcp_execute(nc_tool *self, const char *args_json, char *out, size_t 
     close(out_pipe[1]);
 
     char request[10240];
+    /* Fix: Only wrap once, ensuring valid JSON-RPC */
     snprintf(request, sizeof(request), 
              "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"%s\",\"arguments\":%s},\"id\":1}\n", 
              self->def.name, args_json);
@@ -49,6 +50,21 @@ static bool mcp_execute(nc_tool *self, const char *args_json, char *out, size_t 
     out[total] = '\0';
     close(out_pipe[0]);
     waitpid(pid, NULL, 0);
+
+    /* Very basic JSON extraction of "text" or "content" from MCP response */
+    /* This makes the output usable for the LLM instead of raw JSON-RPC */
+    char *text_start = strstr(out, "\"text\":\"");
+    if (text_start) {
+        text_start += 8;
+        char *text_end = strstr(text_start, "\"}");
+        if (text_end) {
+            size_t len = (size_t)(text_end - text_start);
+            if (len < out_cap) {
+                memmove(out, text_start, len);
+                out[len] = '\0';
+            }
+        }
+    }
 
     return total > 0; 
 }
@@ -79,7 +95,6 @@ int nc_mcp_register_all(const nc_config *cfg, nc_tool *tools, int start_idx) {
             mcp_server_ctx *ctx = malloc(sizeof(mcp_server_ctx));
             nc_strlcpy(ctx->name, name.ptr, name.len + 1);
             
-            /* Build full command with args if present */
             nc_json *args = nc_json_get(s_cfg, "args");
             char full_cmd[1024];
             nc_strlcpy(full_cmd, cmd.ptr, cmd.len + 1);

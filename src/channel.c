@@ -130,6 +130,7 @@ static bool tg_poll(nc_channel *self, nc_incoming_msg *out) {
     out->content[cplen] = '\0';
     nc_strlcpy(out->channel_name, "telegram", sizeof(out->channel_name));
 
+    /* Send 'typing' action as soon as we get a message */
     tg_send_action(ctx, out->sender, "typing");
 
     nc_arena_free(&a);
