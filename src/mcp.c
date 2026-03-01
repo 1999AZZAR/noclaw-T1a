@@ -178,16 +178,18 @@ int nc_mcp_register_all(const nc_config *cfg, nc_tool *tools, int start_idx) {
                 nc_strlcpy(ctx->command, full_cmd, sizeof(ctx->command));
             }
 
-            /* FIX: Pass proper tool definitions for each proxy */
-            tools[count].def.name = strdup(ctx->name);
-            tools[count].def.description = "MCP Server Proxy";
-            
-            /* Give it a more flexible parameter schema for proxying */
-            if (strcmp(ctx->name, "sequentialthinking") == 0) {
+            /* Map known tools to their correct names and schemas */
+            if (strcmp(ctx->name, "tavily") == 0) {
+                tools[count].def.name = "tavily_remote_mcp";
+                tools[count].def.description = "Search the web for real-time information.";
+                tools[count].def.parameters_json = "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}";
+            } else if (strcmp(ctx->name, "sequentialthinking") == 0) {
+                tools[count].def.name = "sequentialthinking";
+                tools[count].def.description = "Plan and solve complex tasks step-by-step.";
                 tools[count].def.parameters_json = "{\"type\":\"object\",\"properties\":{\"thought\":{\"type\":\"string\"},\"thoughtNumber\":{\"type\":\"integer\"},\"totalThoughts\":{\"type\":\"integer\"},\"nextThoughtNeeded\":{\"type\":\"boolean\"}}}";
-            } else if (strcmp(ctx->name, "tavily_remote_mcp") == 0) {
-                tools[count].def.parameters_json = "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}}}";
             } else {
+                tools[count].def.name = strdup(ctx->name);
+                tools[count].def.description = "MCP Server Proxy";
                 tools[count].def.parameters_json = "{\"type\":\"object\"}";
             }
 
