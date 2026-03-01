@@ -31,7 +31,7 @@ static bool cli_poll(nc_channel *self, nc_incoming_msg *out) {
 static bool cli_send(nc_channel *self, const char *to, const char *text) {
     (void)self;
     (void)to;
-    printf("noclaw> %s\n", text);
+    printf("T1a> %s\n", text);
     return true;
 }
 
@@ -130,7 +130,6 @@ static bool tg_poll(nc_channel *self, nc_incoming_msg *out) {
     out->content[cplen] = '\0';
     nc_strlcpy(out->channel_name, "telegram", sizeof(out->channel_name));
 
-    /* Send 'typing' action as soon as we get a message */
     tg_send_action(ctx, out->sender, "typing");
 
     nc_arena_free(&a);
@@ -177,18 +176,4 @@ nc_channel nc_channel_telegram(const char *bot_token) {
         .send = tg_send,
         .free = tg_free,
     };
-}
-
-/* ── Discord / Slack (Disabled to keep T1a minimalist) ────────── */
-
-nc_channel nc_channel_discord(const char *bot_token) {
-    (void)bot_token;
-    nc_log(NC_LOG_ERROR, "Discord channel disabled in this build.");
-    return (nc_channel){0};
-}
-
-nc_channel nc_channel_slack(const char *bot_token) {
-    (void)bot_token;
-    nc_log(NC_LOG_ERROR, "Slack channel disabled in this build.");
-    return (nc_channel){0};
 }
