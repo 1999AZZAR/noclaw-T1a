@@ -26,7 +26,7 @@ static void load_sys_prompt(nc_agent *agent, char *buf, size_t cap) {
              "OPERATIONAL DIRECTIVE:\n"
              "1. You are a fully autonomous agent. Never explain HOW you will use tools; just CALL them.\n"
              "2. If a task requires external information (news, web), call 'tavily_remote_mcp' immediately.\n"
-             "3. If a task is complex, use 'sequentialthinking' to plan and execute.\n"
+             "3. If a task is complex, use 'sequentialthinking' sparingly. Avoid long chains (>5 thoughts).\n"
              "4. Your responses must be final results, not plans or meta-commentary about your functions.\n"
              "5. Brevity is mandatory. Zero fluff.",
              ident ? ident : "Minimalist C agent.",
@@ -129,8 +129,8 @@ const char *nc_agent_chat(nc_agent *agent, const char *user_input) {
     agent_push_msg(agent, "user", user_input, NULL, NULL, 0);
 
     const char *tools_json = build_tools_json(agent);
-    /* Increased max iterations for deeper autonomous reasoning */
-    int max_iterations = 30;
+    /* Reduced max iterations to prevent infinite reasoning loops on SBCs */
+    int max_iterations = 12;
 
     for (int iter = 0; iter < max_iterations; iter++) {
         nc_chat_request req = {
