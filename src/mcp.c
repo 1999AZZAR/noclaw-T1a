@@ -50,7 +50,7 @@ static bool mcp_execute(nc_tool *self, const char *args_json, char *out, size_t 
     /* FIX: Correctly structure JSON-RPC call with arguments */
     snprintf(request, strlen(args_json) + 1024, 
              "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"%s\",\"arguments\":%s},\"id\":1}\n", 
-             self->def.name, args_json);
+             ctx->name, args_json);
     
     write(in_pipe[1], request, strlen(request));
     close(in_pipe[1]);
@@ -180,9 +180,10 @@ int nc_mcp_register_all(const nc_config *cfg, nc_tool *tools, int start_idx) {
 
             /* Map known tools to their correct names and schemas */
             if (strcmp(ctx->name, "tavily") == 0) {
-                tools[count].def.name = "tavily_remote_mcp";
+                tools[count].def.name = "tavily_search";
                 tools[count].def.description = "Search the web for real-time information.";
                 tools[count].def.parameters_json = "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}";
+                nc_strlcpy(ctx->name, "tavily_search", sizeof(ctx->name));
             } else if (strcmp(ctx->name, "fetch") == 0) {
                 tools[count].def.name = "fetch";
                 tools[count].def.description = "Fetch content from a URL.";

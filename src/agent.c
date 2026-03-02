@@ -26,9 +26,10 @@ static void load_sys_prompt(nc_agent *agent, char *buf, size_t cap) {
              "OPERATIONAL DIRECTIVE:\n"
              "1. You are a fully autonomous agent. Never explain HOW you will use tools; just CALL them.\n"
              "2. If a task requires external information (news, web), call 'tavily_remote_mcp' immediately.\n"
-             "3. Think deeply before you act. Use your internal reasoning to structure complex tasks.\n"
-             "4. Your responses must be final results, not plans or meta-commentary about your functions.\n"
-             "5. Brevity is mandatory. Zero fluff.",
+             "3. Think deeply before you act. Use your internal reasoning to structure complex tasks. NEVER loop the same tool call with the same arguments.\n"
+             "4. If a tool call fails or returns empty, do not retry more than once. Provide a concise answer based on what you already know if you are stuck.\n"
+             "5. Your responses must be final results, not plans or meta-commentary about your functions.\n"
+             "6. Brevity is mandatory. Zero fluff.",
              ident ? ident : "Minimalist C agent.",
              soul ? soul : "Helpful assistant.",
              user ? user : "Unknown user.");
