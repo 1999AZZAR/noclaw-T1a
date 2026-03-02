@@ -30,9 +30,15 @@ static int json_escape_into(char *buf, size_t bufsz, int off, const char *s) {
             case '\n': buf[off++] = '\\'; buf[off++] = 'n';  break;
             case '\r': buf[off++] = '\\'; buf[off++] = 'r';  break;
             case '\t': buf[off++] = '\\'; buf[off++] = 't';  break;
+            case '\b': buf[off++] = '\\'; buf[off++] = 'b';  break;
+            case '\f': buf[off++] = '\\'; buf[off++] = 'f';  break;
             default:
                 if ((unsigned char)*s >= 0x20)
                     buf[off++] = *s;
+                else {
+                    /* Escape other control characters as \u00xx */
+                    off += snprintf(buf + off, bufsz - (size_t)off, "\\u%04x", (unsigned char)*s);
+                }
                 break;
         }
     }
