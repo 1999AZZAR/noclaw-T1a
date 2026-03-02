@@ -264,6 +264,7 @@ nc_tool nc_tool_file_read(const nc_config *cfg);
 nc_tool nc_tool_file_write(const nc_config *cfg);
 nc_tool nc_tool_memory_store(void *mem_ctx);
 nc_tool nc_tool_memory_recall(void *mem_ctx);
+nc_tool nc_tool_get_time(void);
 
 #define NC_MAX_TOOLS 128
 

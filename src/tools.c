@@ -220,3 +220,85 @@ nc_tool nc_tool_memory_recall(void *mem_ctx) {
         .free = NULL,
     };
 }
+
+/* ── Time tool (WorldTimeAPI) ────────────────────────────────── */
+
+static bool get_time_execute(nc_tool *self, const char *args_json, char *out, size_t out_cap) {
+    char timezone[64];
+    timezone[0] = '\0';
+    
+    extract_json_string(args_json, "timezone", timezone, sizeof(timezone));
+    
+    char url[256];
+    if (timezone[0]) {
+        /* Sanitize timezone: alphanumeric, /, _, -, + only */
+        for (char *p = timezone; *p; p++) {
+            if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+                  (*p >= '0' && *p <= '9') || *p == '/' || *p == '_' || *p == '-' || *p == '+')) {
+                snprintf(out, out_cap, "error: invalid characters in timezone");
+                return false;
+            }
+        }
+        if (strstr(timezone, "..") || strstr(timezone, "//")) {
+            snprintf(out, out_cap, "error: invalid timezone format");
+            return false;
+        }
+        snprintf(url, sizeof(url), "https://worldtimeapi.org/api/timezone/%s", timezone);
+    } else {
+        snprintf(url, sizeof(url), "https://worldtimeapi.org/api/ip");
+    }
+
+    nc_http_response resp;
+    memset(&resp, 0, sizeof(resp));
+    if (!nc_http_get(url, NULL, 0, &resp)) {
+        snprintf(out, out_cap, "error: http request failed");
+        nc_http_response_free(&resp);
+        return false;
+    }
+
+    if (resp.status != 200) {
+        snprintf(out, out_cap, "error: api returned status %d", resp.status);
+        nc_http_response_free(&resp);
+        return false;
+    }
+
+    /* Parse JSON response */
+    nc_arena a;
+    nc_arena_init(&a, resp.body_len * 2 + 1024);
+    nc_json *root = nc_json_parse(&a, resp.body, resp.body_len);
+    
+    if (!root) {
+        snprintf(out, out_cap, "error: invalid json response");
+        nc_arena_free(&a);
+        nc_http_response_free(&resp);
+        return false;
+    }
+
+    nc_str dt = nc_json_str(nc_json_get(root, "datetime"), "");
+    nc_str tz = nc_json_str(nc_json_get(root, "timezone"), "");
+    nc_str utc_off = nc_json_str(nc_json_get(root, "utc_offset"), "");
+    int day_of_week = (int)nc_json_num(nc_json_get(root, "day_of_week"), -1);
+    
+    const char *days[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+    const char *day_str = (day_of_week >= 0 && day_of_week <= 6) ? days[day_of_week] : "Unknown";
+
+    snprintf(out, out_cap, "%.*s %.*s (%.*s), %s", 
+             NC_STR_ARG(dt), NC_STR_ARG(utc_off), NC_STR_ARG(tz), day_str);
+
+    nc_arena_free(&a);
+    nc_http_response_free(&resp);
+    return true;
+}
+
+nc_tool nc_tool_get_time(void) {
+    return (nc_tool){
+        .def = {
+            .name = "get_time",
+            .description = "Get current date and time from WorldTimeAPI. Use when you need accurate current time. Optional timezone in IANA format (e.g. Europe/London, Asia/Tokyo). Omit to auto-detect from server IP.",
+            .parameters_json = "{\"type\":\"object\",\"properties\":{\"timezone\":{\"type\":\"string\",\"description\":\"IANA timezone (e.g. Europe/London)\"}},\"required\":[]}",
+        },
+        .ctx = NULL,
+        .execute = get_time_execute,
+        .free = NULL,
+    };
+}

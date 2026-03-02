@@ -40,6 +40,7 @@ int nc_cmd_agent(int argc, char **argv) {
     tools[tool_count++] = nc_tool_file_write(&cfg);
     tools[tool_count++] = nc_tool_memory_store(&mem);
     tools[tool_count++] = nc_tool_memory_recall(&mem);
+    tools[tool_count++] = nc_tool_get_time();
 
     tool_count = nc_mcp_register_all(&cfg, tools, tool_count);
 
