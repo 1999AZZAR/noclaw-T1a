@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <sys/select.h>
 #include <signal.h>
+#include <time.h>
 
 /* ── Process & Transport ──────────────────────────────────────── */
 
@@ -161,10 +162,25 @@ static nc_json *mcp_rpc_call(mcp_server *s, const char *method, const char *para
     if (write(s->fd_in, req, strlen(req)) < 0) return NULL;
     /* nc_log(NC_LOG_DEBUG, "MCP -> %s: %s", s->name, req); */
 
-    /* Read loop until we match ID */
+    /* Read loop until we match ID, or timeout */
+    time_t start_time = time(NULL);
+    int timeout_sec = 60; /* 60s total timeout for tool execution */
+
+    /* For non-tool calls (handshake), use shorter timeout */
+    if (strcmp(method, "tools/call") != 0) timeout_sec = 10;
+
     while (1) {
+        if (time(NULL) - start_time > timeout_sec) {
+            nc_log(NC_LOG_ERROR, "MCP request timeout: %s", method);
+            return NULL;
+        }
+
+        /* Call read with timeout */
         char *line = mcp_read_msg(s, arena);
-        if (!line) return NULL;
+        if (!line) {
+            /* If read returned NULL (timeout in select), just loop again to check global timeout */
+            continue;
+        }
         
         /* nc_log(NC_LOG_DEBUG, "MCP <- %s: %s", s->name, line); */
 

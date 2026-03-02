@@ -3,19 +3,35 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include <sys/select.h>
+#include <unistd.h>
+
 typedef struct {
     int dummy;
 } cli_ctx;
 
 static void cli_poll(nc_channel *self, nc_agent *agent) {
-    char buf[4096];
-    printf("> ");
-    fflush(stdout);
-    if (fgets(buf, sizeof(buf), stdin)) {
-        buf[strcspn(buf, "\n")] = 0;
-        if (buf[0]) {
-            const char *reply = nc_agent_chat(agent, buf);
-            printf("\nT1a: %s\n\n", reply);
+    /* Non-blocking poll using select */
+    fd_set fds;
+    struct timeval tv = { .tv_sec = 0, .tv_usec = 0 };
+    
+    FD_ZERO(&fds);
+    FD_SET(STDIN_FILENO, &fds);
+    
+    int ret = select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
+    if (ret > 0 && FD_ISSET(STDIN_FILENO, &fds)) {
+        char buf[4096];
+        if (fgets(buf, sizeof(buf), stdin)) {
+            buf[strcspn(buf, "\n")] = 0;
+            if (buf[0]) {
+                const char *reply = nc_agent_chat(agent, buf);
+                printf("\nT1a: %s\n\n> ", reply);
+                fflush(stdout);
+            } else {
+                /* Empty enter, just reprint prompt */
+                printf("> ");
+                fflush(stdout);
+            }
         }
     }
 }
