@@ -134,15 +134,55 @@ static bool write_all(const char *path, const char *data, size_t len) {
     return rename(tmp, path) == 0;
 }
 
-/* ── Store ───────────────────────────────────────────────────── */
+/* ── Prune & Trim ──────────────────────────────────────────────── */
 
+/* Remove oldest entries if total size > limit */
+static void flat_prune(flat_mem *ctx, size_t max_size_bytes) {
+    size_t flen = 0;
+    char *data = read_all(ctx->path, &flen);
+    if (!data) return;
+
+    if (flen <= max_size_bytes) {
+        free(data);
+        return;
+    }
+
+    /* We need to cut roughly (flen - max_size) bytes from the start.
+       But we must align to line boundaries.
+       However, memories are stored chronologically (append-only), so oldest are at start.
+       
+       Wait, simple pruning: count lines, keep last N? 
+       Or keep last N bytes?
+       
+       Let's implement a smarter "semantic density" prune later.
+       For now: Keep last 70% of the file if it exceeds limit. */
+    
+    size_t cut_target = flen - (size_t)(max_size_bytes * 0.7);
+    char *start = data;
+    char *p = data;
+    
+    while (p - start < cut_target && *p) {
+        char *eol = strchr(p, '\n');
+        if (!eol) break;
+        p = eol + 1;
+    }
+
+    if (p > start) {
+        size_t new_len = flen - (p - start);
+        write_all(ctx->path, p, new_len);
+        nc_log(NC_LOG_INFO, "Pruned memory: removed %ld bytes", (long)(p - start));
+    }
+
+    free(data);
+}
+
+/* Store with auto-pruning */
 static bool flat_store(nc_memory *self, const char *key, const char *content) {
     flat_mem *ctx = (flat_mem *)self->ctx;
     if (!ctx) return false;
 
+    /* ... escape logic ... */
     time_t now = time(NULL);
-
-    /* Escape key and content so tabs/newlines don't break the format */
     char esc_key[1024], esc_content[8192];
     flat_escape(key, esc_key, sizeof(esc_key));
     flat_escape(content, esc_content, sizeof(esc_content));
@@ -152,21 +192,19 @@ static bool flat_store(nc_memory *self, const char *key, const char *content) {
     size_t flen = 0;
     char *data = read_all(ctx->path, &flen);
 
-    /* Build new file: replace line with matching key, or append */
+    /* ... same logic as before to build new content ... */
     size_t new_cap = flen + eklen + strlen(esc_content) + 64;
     char *out = (char *)malloc(new_cap);
     if (!out) { free(data); return false; }
 
     size_t out_len = 0;
-
-    /* Copy existing lines, skipping the one with matching key */
     if (data) {
         char *line = data;
         while (*line) {
             char *eol = strchr(line, '\n');
             size_t llen = eol ? (size_t)(eol - line) : strlen(line);
-
-            /* Check if this line's key matches (stored escaped) */
+            
+            /* Logic to remove dupe key */
             bool skip = false;
             if (llen > eklen) {
                 skip = (memcmp(line, esc_key, eklen) == 0 && line[eklen] == '\t');
@@ -177,21 +215,25 @@ static bool flat_store(nc_memory *self, const char *key, const char *content) {
                 out_len += llen;
                 out[out_len++] = '\n';
             }
-
             line += llen;
             if (*line == '\n') line++;
         }
     }
 
-    /* Append the new/updated entry (escaped) */
     int n = snprintf(out + out_len, new_cap - out_len, "%s\t%s\t%ld\n",
                      esc_key, esc_content, (long)now);
     if (n > 0) out_len += (size_t)n;
 
     bool ok = write_all(ctx->path, out, out_len);
-
     free(out);
     free(data);
+
+    /* Check size and prune if needed (e.g. > 1MB) */
+    /* In a real config we'd pass this limit down. For now hardcode generous 1MB */
+    if (ok && out_len > 1024 * 1024) {
+        flat_prune(ctx, 1024 * 1024);
+    }
+
     return ok;
 }
 

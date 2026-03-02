@@ -30,7 +30,7 @@ void nc_config_defaults(nc_config *cfg) {
     cfg->gateway_allow_public_bind = false;
 
     /* Memory */
-    nc_strlcpy(cfg->memory_backend, "sqlite", sizeof(cfg->memory_backend));
+    nc_strlcpy(cfg->memory_backend, "flat", sizeof(cfg->memory_backend));
     cfg->memory_auto_save = true;
 
     /* Autonomy */
@@ -305,7 +305,7 @@ void nc_test_config(void) {
     NC_ASSERT(cfg.gateway_allow_public_bind == false, "config default no public bind");
     NC_ASSERT(cfg.workspace_only == true, "config default workspace_only");
     NC_ASSERT(cfg.secrets_encrypt == true, "config default secrets encrypt");
-    NC_ASSERT(strcmp(cfg.memory_backend, "sqlite") == 0, "config default memory backend");
+    NC_ASSERT(strcmp(cfg.memory_backend, "flat") == 0, "config default memory backend");
     NC_ASSERT(strcmp(cfg.runtime_kind, "daemon") == 0, "config default runtime");
 }
 #endif
