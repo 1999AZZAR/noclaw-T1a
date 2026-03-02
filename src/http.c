@@ -361,11 +361,23 @@ static bool load_system_cas(void) {
     g_tas.items = (br_x509_trust_anchor *)calloc(g_tas.cap, sizeof(br_x509_trust_anchor));
     g_tas.pool_cap = 256 * 1024;
     g_tas.pool = (unsigned char *)malloc(g_tas.pool_cap);
-    if (!g_tas.items || !g_tas.pool) { free(pem); return false; }
+    if (!g_tas.items || !g_tas.pool) { 
+        free(pem);
+        if (g_tas.items) free(g_tas.items);
+        if (g_tas.pool) free(g_tas.pool);
+        g_tas.items = NULL;
+        g_tas.pool = NULL;
+        return false; 
+    }
 
     /* DER accumulation buffer */
     der_buf der = { .buf = (unsigned char *)malloc(8192), .len = 0, .cap = 8192 };
-    if (!der.buf) { free(pem); return false; }
+    if (!der.buf) { 
+        free(pem);
+        free(g_tas.items); g_tas.items = NULL;
+        free(g_tas.pool); g_tas.pool = NULL;
+        return false; 
+    }
 
     br_pem_decoder_context pc;
     br_pem_decoder_init(&pc);
@@ -763,8 +775,12 @@ bool nc_http_post(const char *url, const char *body, size_t body_len,
     if ((size_t)off < sizeof(req_header))
         off += snprintf(req_header + off, sizeof(req_header) - (size_t)off, "\r\n");
 
-    /* Clamp offset to buffer size (snprintf returns would-be length on truncation) */
-    size_t req_len = (size_t)off < sizeof(req_header) ? (size_t)off : sizeof(req_header);
+    if ((size_t)off >= sizeof(req_header)) {
+        nc_log(NC_LOG_ERROR, "HTTP headers too large");
+        tls_close(&conn);
+        return false;
+    }
+    size_t req_len = (size_t)off;
 
     /* Send request */
     if (!tls_write_all(&conn, req_header, req_len)) {
@@ -839,7 +855,12 @@ bool nc_http_get(const char *url, const char **headers, int header_count,
     if ((size_t)off < sizeof(req_header))
         off += snprintf(req_header + off, sizeof(req_header) - (size_t)off, "\r\n");
 
-    size_t req_len = (size_t)off < sizeof(req_header) ? (size_t)off : sizeof(req_header);
+    if ((size_t)off >= sizeof(req_header)) {
+        nc_log(NC_LOG_ERROR, "HTTP headers too large");
+        tls_close(&conn);
+        return false;
+    }
+    size_t req_len = (size_t)off;
     if (!tls_write_all(&conn, req_header, req_len)) {
         tls_close(&conn);
         return false;

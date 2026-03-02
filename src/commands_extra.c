@@ -1,6 +1,5 @@
 #include "nc.h"
 #include <string.h>
-#include <stdlib.h>
 #include <stdio.h>
 
 int nc_cmd_gateway(int argc, char **argv) {
