@@ -66,8 +66,8 @@ void nc_agent_init(nc_agent *agent, nc_config *cfg, nc_provider *prov,
 static const char *build_tools_json(nc_agent *agent) {
     if (agent->tool_count == 0) return NULL;
 
-    /* 64KB for tool definitions */
-    static const size_t bufsz = 65536;
+    /* 256KB for tool definitions (MCP tools have large schemas) */
+    static const size_t bufsz = 262144;
     char *buf = (char *)nc_arena_alloc(&agent->arena, bufsz);
     if (!buf) return NULL;
     int off = 0;
@@ -76,9 +76,27 @@ static const char *build_tools_json(nc_agent *agent) {
     for (int i = 0; i < agent->tool_count; i++) {
         if (i > 0) off += snprintf(buf + off, bufsz - (size_t)off, ",");
         off += snprintf(buf + off, bufsz - (size_t)off,
-            "{\"type\":\"function\",\"function\":{\"name\":\"%s\",\"description\":\"%s\",\"parameters\":%s}}",
-            agent->tools[i].def.name,
-            agent->tools[i].def.description,
+            "{\"type\":\"function\",\"function\":{\"name\":\"%s\",\"description\":\"",
+            agent->tools[i].def.name);
+        /* Escape description (may contain newlines from MCP tools) */
+        const char *desc = agent->tools[i].def.description;
+        if (desc) {
+            for (; *desc && (size_t)off < bufsz - 10; desc++) {
+                switch (*desc) {
+                    case '"':  buf[off++] = '\\'; buf[off++] = '"';  break;
+                    case '\\': buf[off++] = '\\'; buf[off++] = '\\'; break;
+                    case '\n': buf[off++] = '\\'; buf[off++] = 'n';  break;
+                    case '\r': buf[off++] = '\\'; buf[off++] = 'r';  break;
+                    case '\t': buf[off++] = '\\'; buf[off++] = 't';  break;
+                    default:
+                        if ((unsigned char)*desc >= 0x20)
+                            buf[off++] = *desc;
+                        break;
+                }
+            }
+        }
+        off += snprintf(buf + off, bufsz - (size_t)off,
+            "\",\"parameters\":%s}}",
             agent->tools[i].def.parameters_json);
     }
 
