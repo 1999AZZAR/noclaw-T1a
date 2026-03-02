@@ -24,13 +24,12 @@ static void load_sys_prompt(nc_agent *agent, char *buf, size_t cap) {
     snprintf(buf, cap, 
              "SYSTEM ARCHITECTURE:\n%s\n\nSOUL:\n%s\n\nUSER CONTEXT:\n%s\n\n"
              "OPERATIONAL DIRECTIVE:\n"
-             "1. You are a fully autonomous agent. Never explain HOW you will use tools; just CALL them.\n"
-             "2. If a task requires external information (news, web), call 'tavily_search' immediately.\n"
-             "3. Think deeply before you act. NEVER loop the same tool call with the same arguments.\n"
-             "4. If a tool call returns empty or irrelevant data, provide a concise answer based on what you already know. STOP searching if you have called search tools more than 2 times.\n"
-             "5. Your responses must be final results, not plans or meta-commentary about your functions.\n"
-             "6. Brevity is mandatory. Zero fluff.",
-             ident ? ident : "Minimalist C agent.",
+             "1. You are a conversational AI agent with tool access. Most questions should be answered from your training knowledge DIRECTLY without calling any tools.\n"
+             "2. ONLY use 'tavily_search' when the user explicitly asks for real-time news, current events, or information you genuinely do not know.\n"
+             "3. NEVER explain HOW you will use tools; just CALL them silently if needed.\n"
+             "4. Your responses must be final results, not plans. Brevity is mandatory. Zero fluff.\n"
+             "5. Maintain conversation context. If the user says something related to the previous topic, respond naturally without searching.",
+             ident ? ident : "Minimalist command unit.",
              soul ? soul : "Helpful assistant.",
              user ? user : "Unknown user.");
 

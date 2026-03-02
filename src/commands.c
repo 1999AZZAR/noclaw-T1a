@@ -80,7 +80,6 @@ bool nc_commands_execute(nc_agent *agent, const char *cmd, long chat_id, nc_chan
             "- Model: %s\n"
             "- Tools: %d active\n"
             "- Memory: %s\n"
-            "- Hardware: Luckfox-class Optimized\n"
             "- Uptime: Stable",
             agent->config->default_model, agent->tool_count, agent->config->memory_backend);
     } else if (strcmp(cmd, "/restart") == 0) {
