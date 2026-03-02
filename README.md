@@ -5,25 +5,47 @@ T1a is an ultra-lightweight, autonomous AI agent built in pure C11. Based on the
 ## Key Capabilities
 
 - **Ultra-Efficient**: ~80KB binary, <5MB RAM usage. Zero external runtime dependencies.
-- **Daemon-Ready (Always-On)**: Native integration with `systemd` for 24/7 autonomous operation.
-- **Full MCP Support**: Native, robust Model Context Protocol (MCP) client. Supports persistent connections to servers like Tavily, Sequential Thinking, and Memory Graph.
-- **Self-Managing Memory**: High-density flat-file memory system with automatic pruning and Memory Compaction to prevent context bloat.
-- **Robust JSON/HTTP**: Standard-compliant JSON-RPC layer with strict character escaping to ensure compatibility with LLM providers including OpenRouter, OpenAI, and Gemini.
+- **Daemon-Ready (Always-On)**: Self-healing process management, signal handling (`SIGINT`/`SIGTERM`), automated resource cleanup. Native `systemd` integration for 24/7 autonomous operation.
+- **Full MCP Support**: Native, robust Model Context Protocol (MCP) client. Drives complex toolchains (Filesystem, Search, Tavily, Sequential Thinking, Memory Graph) with full handshake and timeout management.
+- **Self-Managing Memory**: Flat-file memory system with semantic-like keyword search, automatic pruning, and memory compaction to prevent context bloat and OOM crashes.
+- **Provider Fallback**: Primary provider (e.g. OpenRouter) with configurable fallback (e.g. Anthropic direct). Automatic switch on failure for resilience.
+- **Robust JSON/HTTP**: Standard-compliant JSON-RPC layer with strict character escaping. Compatible with OpenRouter, OpenAI, Anthropic, and Gemini.
 
 ## Architecture
 
 T1a utilizes a modular, function-pointer based architecture for extreme flexibility without bloat:
 
-- **Core**: Event loop driven by non-blocking I/O.
-- **Providers**: Native TLS support for OpenAI-compatible APIs (Llama 3.3, Gemini 2.0 Flash, etc.).
-- **Tools**: Built-in shell, filesystem I/O, and native MCP orchestration.
-- **Persistence**: Persistent memories stored at `workspace/memories.tsv` with auto-garbage collection.
+- **Core**: Event loop driven by non-blocking I/O (via `select`).
+- **Providers**: Native TLS support for Anthropic (Claude 3.5 Sonnet) and OpenAI-compatible APIs (OpenRouter, Llama 3.3, Gemini 2.0 Flash, etc.).
+- **Tools**: Built-in shell, filesystem I/O, and dynamic MCP proxying.
+- **Persistence**: Memories stored at `workspace/memories.tsv` with auto-garbage collection.
 
 ## Quick Start
 
 ### Build
 ```bash
-make clean && make release
+make release
+```
+
+### Configuration
+Managed via `~/.noclaw/config.json`. T1a auto-generates optimized defaults on first run.
+
+```bash
+# Initialize configuration
+./noclaw onboard --api-key sk-or-... --provider openrouter
+```
+
+### Execution
+
+```bash
+# Run as an interactive CLI agent
+./noclaw agent
+
+# Run as a background daemon (Telegram mode)
+./noclaw agent --channel telegram &
+
+# Run HTTP gateway
+./noclaw gateway
 ```
 
 ### Setup Always-On (Systemd)
@@ -58,6 +80,12 @@ systemctl --user start t1a.service
 - **Restart Process**: `systemctl --user restart t1a`
 - **Monitor Logs**: `tail -f ~/t1a_final.log`
 
+## Daemon Features
+
+- **Graceful Shutdown**: Catches termination signals to kill child MCP processes, preventing zombies.
+- **Anti-Stuck Logic**: Detects and breaks infinite reasoning loops.
+- **Heartbeat**: Periodic self-checks to ensure system stability.
+
 ## MCP Toolsets
 T1a drives a suite of MCP servers (configured in `~/.noclaw/mcp.json`):
 1. **Tavily**: Web research, crawling, and content extraction.
@@ -67,7 +95,7 @@ T1a drives a suite of MCP servers (configured in `~/.noclaw/mcp.json`):
 ## Philosophy
 
 - **Efficiency First**: No wasted cycles, no unnecessary allocations.
-- **Robustness**: Designed to handle malformed data and network instability gracefully.
+- **Robustness**: Designed to run for months without restarting. Handles malformed data and network instability gracefully.
 - **Pragmatism**: Solves complex problems using standard syscalls and minimalist C.
 
 ---
