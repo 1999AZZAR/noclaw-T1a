@@ -733,3 +733,80 @@ nc_provider nc_provider_anthropic(const char *api_key, const char *api_url) {
         .free = provider_free,
     };
 }
+
+/* ══════════════════════════════════════════════════════════════════
+ *  Provider Factory & Chaining
+ * ══════════════════════════════════════════════════════════════════ */
+
+/* Helper to select implementation */
+static nc_provider create_provider_impl(const char *name, const char *key, const char *url) {
+    if (strcmp(name, "anthropic") == 0) {
+        return nc_provider_anthropic(key, url);
+    }
+    /* default to openai/openrouter */
+    return nc_provider_openai(key, url);
+}
+
+nc_provider nc_provider_from_config(const nc_config *cfg, bool use_fallback) {
+    if (use_fallback) {
+        return create_provider_impl(cfg->fallback_provider, cfg->fallback_api_key, cfg->fallback_api_url);
+    } else {
+        return create_provider_impl(cfg->default_provider, cfg->api_key, cfg->api_url);
+    }
+}
+
+/* Chain context */
+typedef struct {
+    nc_provider primary;
+    nc_provider fallback;
+    char        fallback_model[128];
+} chain_ctx;
+
+static bool chain_chat(nc_provider *self, const nc_chat_request *req, nc_chat_response *resp) {
+    chain_ctx *ctx = (chain_ctx *)self->ctx;
+
+    /* Try primary */
+    if (ctx->primary.chat(&ctx->primary, req, resp)) {
+        return true;
+    }
+
+    nc_log(NC_LOG_WARN, "Primary provider failed, switching to fallback (%s)", ctx->fallback.name);
+
+    /* Create alternate request with fallback model if specified */
+    nc_chat_request req_alt = *req;
+    if (ctx->fallback_model[0]) {
+        req_alt.model = ctx->fallback_model;
+    }
+
+    return ctx->fallback.chat(&ctx->fallback, &req_alt, resp);
+}
+
+static void chain_free(nc_provider *self) {
+    chain_ctx *ctx = (chain_ctx *)self->ctx;
+    if (ctx->primary.free) ctx->primary.free(&ctx->primary);
+    if (ctx->fallback.free) ctx->fallback.free(&ctx->fallback);
+    free(ctx);
+    self->ctx = NULL;
+}
+
+nc_provider nc_provider_chain(nc_provider primary, nc_provider fallback, const char *fallback_model) {
+    chain_ctx *ctx = (chain_ctx *)calloc(1, sizeof(chain_ctx));
+    if (!ctx) {
+        /* If OOM, just return primary and leak nothing (caller owns them if this fails? 
+         * actually caller expects us to take ownership. We should try to free them or warn.
+         * But given we return a struct by value, we can't easily signal error. 
+         * Just return primary.*/
+        return primary;
+    }
+
+    ctx->primary = primary;
+    ctx->fallback = fallback;
+    if (fallback_model) nc_strlcpy(ctx->fallback_model, fallback_model, sizeof(ctx->fallback_model));
+
+    return (nc_provider){
+        .name = "chain",
+        .ctx  = ctx,
+        .chat = chain_chat,
+        .free = chain_free,
+    };
+}

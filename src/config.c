@@ -56,6 +56,12 @@ void nc_config_defaults(nc_config *cfg) {
     cfg->cost_enabled = true;
     cfg->cost_daily_limit_usd = 50.0;
     cfg->cost_monthly_limit_usd = 500.0;
+
+    /* Fallback (defaults empty) */
+    cfg->fallback_provider[0] = '\0';
+    cfg->fallback_model[0] = '\0';
+    cfg->fallback_api_key[0] = '\0';
+    cfg->fallback_api_url[0] = '\0';
 }
 
 /* Helper: copy nc_str to fixed buffer */
@@ -98,6 +104,16 @@ bool nc_config_load(nc_config *cfg) {
         str_to_buf(cfg->default_model, sizeof(cfg->default_model), nc_json_str(v, ""));
     if ((v = nc_json_get(root, "default_temperature")))
         cfg->default_temperature = nc_json_num(v, 0.7);
+
+    /* Fallback fields */
+    if ((v = nc_json_get(root, "fallback_provider")))
+        str_to_buf(cfg->fallback_provider, sizeof(cfg->fallback_provider), nc_json_str(v, ""));
+    if ((v = nc_json_get(root, "fallback_model")))
+        str_to_buf(cfg->fallback_model, sizeof(cfg->fallback_model), nc_json_str(v, ""));
+    if ((v = nc_json_get(root, "fallback_api_key")))
+        str_to_buf(cfg->fallback_api_key, sizeof(cfg->fallback_api_key), nc_json_str(v, ""));
+    if ((v = nc_json_get(root, "fallback_api_url")))
+        str_to_buf(cfg->fallback_api_url, sizeof(cfg->fallback_api_url), nc_json_str(v, ""));
 
     /* Gateway section */
     nc_json *gw = nc_json_get(root, "gateway");
@@ -205,6 +221,16 @@ bool nc_config_save(const nc_config *cfg) {
     nc_jw_str(&w, "default_model", cfg->default_model);
     nc_jw_num(&w, "default_temperature", cfg->default_temperature);
 
+    if (cfg->fallback_provider[0]) {
+        nc_jw_str(&w, "fallback_provider", cfg->fallback_provider);
+        if (cfg->fallback_model[0])
+            nc_jw_str(&w, "fallback_model", cfg->fallback_model);
+        if (cfg->fallback_api_key[0])
+            nc_jw_str(&w, "fallback_api_key", cfg->fallback_api_key);
+        if (cfg->fallback_api_url[0])
+            nc_jw_str(&w, "fallback_api_url", cfg->fallback_api_url);
+    }
+
     /* Gateway */
     nc_jw_raw(&w, "gateway", "{");
     {
@@ -289,6 +315,16 @@ void nc_config_apply_env(nc_config *cfg) {
         nc_strlcpy(cfg->workspace_dir, v, sizeof(cfg->workspace_dir));
     if ((v = getenv("NOCLAW_BASE_URL")))
         nc_strlcpy(cfg->api_url, v, sizeof(cfg->api_url));
+
+    /* Fallback Env */
+    if ((v = getenv("NOCLAW_FALLBACK_PROVIDER")))
+        nc_strlcpy(cfg->fallback_provider, v, sizeof(cfg->fallback_provider));
+    if ((v = getenv("NOCLAW_FALLBACK_MODEL")))
+        nc_strlcpy(cfg->fallback_model, v, sizeof(cfg->fallback_model));
+    if ((v = getenv("NOCLAW_FALLBACK_API_KEY")))
+        nc_strlcpy(cfg->fallback_api_key, v, sizeof(cfg->fallback_api_key));
+    if ((v = getenv("NOCLAW_FALLBACK_API_URL")))
+        nc_strlcpy(cfg->fallback_api_url, v, sizeof(cfg->fallback_api_url));
 }
 
 /* ── Tests ──────────────────────────────────────────────────────── */

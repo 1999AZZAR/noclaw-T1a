@@ -140,6 +140,12 @@ typedef struct nc_config {
     bool   cost_enabled;
     double cost_daily_limit_usd;
     double cost_monthly_limit_usd;
+
+    /* Fallback provider */
+    char fallback_provider[64];
+    char fallback_model[128];
+    char fallback_api_key[256];
+    char fallback_api_url[256];
 } nc_config;
 
 bool nc_config_load(nc_config *cfg);
@@ -191,6 +197,8 @@ struct nc_provider {
 
 nc_provider nc_provider_openai(const char *api_key, const char *api_url);
 nc_provider nc_provider_anthropic(const char *api_key, const char *api_url);
+nc_provider nc_provider_chain(nc_provider primary, nc_provider fallback, const char *fallback_model);
+nc_provider nc_provider_from_config(const nc_config *cfg, bool use_fallback);
 
 typedef struct nc_incoming_msg {
     char sender[128];
