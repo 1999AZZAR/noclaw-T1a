@@ -76,22 +76,22 @@ bool nc_commands_execute(nc_agent *agent, const char *cmd, long chat_id, nc_chan
 
     if (strcmp(cmd, "/status") == 0) {
         snprintf(reply, sizeof(reply), 
-            "✨ *T1a Unit Status*\n\n"
-            "• *Model:* `%s`\n"
-            "• *Tools:* `%d` active\n"
-            "• *Memory:* `%s`\n"
-            "• *Hardware:* Luckfox-class Optimized\n"
-            "• *Uptime:* Stable ⚡",
+            "T1a Unit Status\n\n"
+            "- Model: %s\n"
+            "- Tools: %d active\n"
+            "- Memory: %s\n"
+            "- Hardware: Luckfox-class Optimized\n"
+            "- Uptime: Stable",
             agent->config->default_model, agent->tool_count, agent->config->memory_backend);
     } else if (strcmp(cmd, "/restart") == 0) {
-        chan->send(chan, to_buf, "🔄 *Restarting T1a binary...*");
+        chan->send(chan, to_buf, "Restarting T1a binary...");
         exit(0);
     } else if (strcmp(cmd, "/reset") == 0) {
         nc_agent_reset(agent);
-        snprintf(reply, sizeof(reply), "🧹 *Conversation reset. Brain is fresh now, sayang.*");
+        snprintf(reply, sizeof(reply), "Conversation reset. Brain is fresh now.");
     } else if (strcmp(cmd, "/help") == 0) {
         snprintf(reply, sizeof(reply),
-            "📜 *T1a Commands*\n\n"
+            "T1a Commands\n\n"
             "/status - Show unit health\n"
             "/reset  - Clear chat history\n"
             "/restart - Force binary reboot\n"

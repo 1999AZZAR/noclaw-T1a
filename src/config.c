@@ -20,42 +20,42 @@ void nc_config_defaults(nc_config *cfg) {
 
     /* Provider */
     nc_strlcpy(cfg->default_provider, "openrouter", sizeof(cfg->default_provider));
-    nc_strlcpy(cfg->default_model, "anthropic/claude-sonnet-4", sizeof(cfg->default_model));
-    cfg->default_temperature = 0.7;
+    nc_strlcpy(cfg->default_model, "anthropic/claude-3.5-sonnet", sizeof(cfg->default_model));
+    cfg->default_temperature = 0.5;
 
     /* Gateway */
     nc_strlcpy(cfg->gateway_host, "127.0.0.1", sizeof(cfg->gateway_host));
-    cfg->gateway_port = 3000;
+    cfg->gateway_port = 8888;
     cfg->gateway_require_pairing = true;
     cfg->gateway_allow_public_bind = false;
 
     /* Memory */
-    nc_strlcpy(cfg->memory_backend, "flat", sizeof(cfg->memory_backend));
+    nc_strlcpy(cfg->memory_backend, "sqlite", sizeof(cfg->memory_backend));
     cfg->memory_auto_save = true;
 
     /* Autonomy */
-    nc_strlcpy(cfg->autonomy_level, "supervised", sizeof(cfg->autonomy_level));
+    nc_strlcpy(cfg->autonomy_level, "full", sizeof(cfg->autonomy_level));
     cfg->workspace_only = true;
-    cfg->max_actions_per_hour = 20;
+    cfg->max_actions_per_hour = 120;
 
     /* Heartbeat */
-    cfg->heartbeat_enabled = false;
-    cfg->heartbeat_interval_minutes = 30;
+    cfg->heartbeat_enabled = true;
+    cfg->heartbeat_interval_minutes = 15;
 
     /* Security */
     cfg->secrets_encrypt = true;
     nc_strlcpy(cfg->sandbox_backend, "auto", sizeof(cfg->sandbox_backend));
 
     /* Identity */
-    nc_strlcpy(cfg->identity_format, "openclaw", sizeof(cfg->identity_format));
+    nc_strlcpy(cfg->identity_format, "t1a-v1", sizeof(cfg->identity_format));
 
     /* Runtime */
-    nc_strlcpy(cfg->runtime_kind, "native", sizeof(cfg->runtime_kind));
+    nc_strlcpy(cfg->runtime_kind, "daemon", sizeof(cfg->runtime_kind));
 
     /* Cost */
-    cfg->cost_enabled = false;
-    cfg->cost_daily_limit_usd = 10.0;
-    cfg->cost_monthly_limit_usd = 100.0;
+    cfg->cost_enabled = true;
+    cfg->cost_daily_limit_usd = 50.0;
+    cfg->cost_monthly_limit_usd = 500.0;
 }
 
 /* Helper: copy nc_str to fixed buffer */
@@ -299,13 +299,13 @@ void nc_test_config(void) {
     nc_config_defaults(&cfg);
 
     NC_ASSERT(strcmp(cfg.default_provider, "openrouter") == 0, "config default provider");
-    NC_ASSERT(cfg.default_temperature == 0.7, "config default temp");
-    NC_ASSERT(cfg.gateway_port == 3000, "config default port");
+    NC_ASSERT(cfg.default_temperature == 0.5, "config default temp");
+    NC_ASSERT(cfg.gateway_port == 8888, "config default port");
     NC_ASSERT(cfg.gateway_require_pairing == true, "config default pairing");
     NC_ASSERT(cfg.gateway_allow_public_bind == false, "config default no public bind");
     NC_ASSERT(cfg.workspace_only == true, "config default workspace_only");
     NC_ASSERT(cfg.secrets_encrypt == true, "config default secrets encrypt");
-    NC_ASSERT(strcmp(cfg.memory_backend, "flat") == 0, "config default memory backend");
-    NC_ASSERT(strcmp(cfg.runtime_kind, "native") == 0, "config default runtime");
+    NC_ASSERT(strcmp(cfg.memory_backend, "sqlite") == 0, "config default memory backend");
+    NC_ASSERT(strcmp(cfg.runtime_kind, "daemon") == 0, "config default runtime");
 }
 #endif
