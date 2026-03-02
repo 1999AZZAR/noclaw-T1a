@@ -35,6 +35,35 @@ int main(void) {
 
 #else /* Normal build */
 
+#include <signal.h>
+#include <stdlib.h>
+
+/* ── Cleanup & Signal Handling ────────────────────────────────── */
+
+static void nc_atexit_cleanup(void) {
+    /* Kill all child MCP servers to prevent zombies */
+    nc_mcp_cleanup();
+}
+
+static void nc_signal_handler(int sig) {
+    (void)sig;
+    /* This will call exit(), which triggers atexit functions */
+    exit(0);
+}
+
+static void setup_signals(void) {
+    atexit(nc_atexit_cleanup);
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = nc_signal_handler;
+    sigemptyset(&sa.sa_mask);
+    /* Restart syscalls if possible, though we exit anyway */
+    sa.sa_flags = SA_RESTART; 
+    
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+}
+
 /* ── Usage ────────────────────────────────────────────────────── */
 
 static void print_usage(void) {
@@ -83,6 +112,9 @@ static const command commands[] = {
 };
 
 int main(int argc, char **argv) {
+    /* Register cleanup handlers immediately */
+    setup_signals();
+
     if (argc < 2) {
         print_usage();
         return 0;

@@ -400,6 +400,29 @@ static int mcp_discover_tools(mcp_server *s, nc_tool *tools, int count) {
     return count;
 }
 
+/* ── Cleanup ──────────────────────────────────────────────────── */
+
+void nc_mcp_cleanup(void) {
+    for (int i = 0; i < g_server_count; i++) {
+        mcp_server *s = g_servers[i];
+        if (s && s->pid > 0) {
+            nc_log(NC_LOG_INFO, "Stopping MCP server '%s' (PID %d)...", s->name, s->pid);
+            kill(s->pid, SIGTERM);
+            /* Don't waitpid here, let system init handle it or just leave them.
+               Actually, for cleaner shutdown, we should wait. */
+            int status;
+            waitpid(s->pid, &status, WNOHANG); /* Try to reap if ready */
+            
+            nc_arena_free(&s->arena);
+            close(s->fd_in);
+            close(s->fd_out);
+            free(s);
+            g_servers[i] = NULL;
+        }
+    }
+    g_server_count = 0;
+}
+
 /* ── Public API ───────────────────────────────────────────────── */
 
 int nc_mcp_register_all(const nc_config *cfg, nc_tool *tools, int start_idx) {

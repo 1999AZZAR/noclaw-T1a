@@ -261,6 +261,7 @@ nc_tool nc_tool_memory_recall(void *mem_ctx);
 
 /* MCP extensions */
 int nc_mcp_register_all(const nc_config *cfg, nc_tool *tools, int start_idx);
+void nc_mcp_cleanup(void);
 
 nc_memory nc_memory_noop(void);
 nc_memory nc_memory_flat(const char *path);
