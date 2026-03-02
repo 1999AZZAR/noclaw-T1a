@@ -222,13 +222,6 @@ static bool openai_chat(nc_provider *self, const nc_chat_request *req, nc_chat_r
         }
     }
 
-    /* DEBUG: dump body to file for inspection */
-    {
-        FILE *df = fopen("/tmp/noclaw_debug_body.json", "w");
-        if (df) { fwrite(body, 1, (size_t)body_len, df); fclose(df); }
-        nc_log(NC_LOG_INFO, "Request body: %d bytes, body_sz: %zu", body_len, body_sz);
-    }
-
     /* Headers */
     char auth_hdr[300];
     snprintf(auth_hdr, sizeof(auth_hdr), "Authorization: Bearer %s", ctx->api_key);
