@@ -252,6 +252,9 @@ static bool openai_chat(nc_provider *self, const nc_chat_request *req, nc_chat_r
                 nc_http_response_free(&http_resp);
                 usleep(1000000); /* 1s backoff */
                 continue;
+            } else if (http_resp.status == 400 && strstr(http_resp.body, "tool")) {
+                nc_log(NC_LOG_WARN, "Provider HTTP 400 (likely tool schema error), skipping retries...");
+                goto cleanup;
             } else {
                 nc_log(NC_LOG_ERROR, "Provider fatal HTTP %d: %.200s", http_resp.status, http_resp.body);
                 goto cleanup;
@@ -674,6 +677,9 @@ static bool anthropic_chat(nc_provider *self, const nc_chat_request *req, nc_cha
                 nc_http_response_free(&http_resp);
                 usleep(1000000);
                 continue;
+            } else if (http_resp.status == 400 && strstr(http_resp.body, "tool")) {
+                nc_log(NC_LOG_WARN, "Provider HTTP 400 (likely tool schema error), skipping retries...");
+                goto cleanup;
             } else {
                 nc_log(NC_LOG_ERROR, "Provider fatal HTTP %d: %.200s", http_resp.status, http_resp.body);
                 goto cleanup;
