@@ -269,6 +269,9 @@ nc_tool nc_tool_sys_info(void);
 nc_tool nc_tool_calc(void);
 nc_tool nc_tool_http_fetch(void);
 nc_tool nc_tool_list_dir(const nc_config *cfg);
+nc_tool nc_tool_env_get(void);
+nc_tool nc_tool_base64(void);
+nc_tool nc_tool_hash(void);
 
 #define NC_MAX_TOOLS 128
 
