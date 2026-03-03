@@ -21,7 +21,7 @@ T1a utilizes a modular, function-pointer based architecture for extreme flexibil
 - **Tools**: Built-in shell, filesystem I/O, and native MCP orchestration.
 - **Persistence**: Persistent memories stored at `workspace/memories.tsv` with auto-garbage collection.
 
-## 🛠️ Toolsets
+## Toolsets
 
 ### Internal Tools (Native C)
 1. **`shell`**: Execute system commands.
@@ -42,7 +42,7 @@ T1a drives a suite of MCP servers (configured in `~/.noclaw/mcp.json`):
 2. **Sequential Thinking**: Structured, reflective problem-solving.
 3. **Memory Graph**: Knowledge graph-based long-term memory.
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Build
 ```bash
