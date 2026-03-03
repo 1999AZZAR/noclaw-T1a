@@ -24,6 +24,10 @@ int nc_cmd_gateway(int argc, char **argv) {
     tools[tool_count++] = nc_tool_memory_store(&mem);
     tools[tool_count++] = nc_tool_memory_recall(&mem);
     tools[tool_count++] = nc_tool_get_time();
+    tools[tool_count++] = nc_tool_sys_info();
+    tools[tool_count++] = nc_tool_calc();
+    tools[tool_count++] = nc_tool_http_fetch();
+    tools[tool_count++] = nc_tool_list_dir(&cfg);
     tool_count = nc_mcp_register_all(&cfg, tools, tool_count);
 
     nc_agent agent;
